@@ -9,50 +9,100 @@ class MaxDepth extends Exception
 
 enum Struct:
   case Stop
-  case Arrow(a:Struct,b:Struct)
-  case App(f:Struct, s:Struct)
-  case Func(name:String)
-  case Lambda(name:String, t:Struct)
 
 def inspect(p:AnyRef):Unit =
   println("Inspector Gadget")
 
-  def tryCalling(f:Function1[AnyRef,AnyRef], names:Int) : Struct =
+  trait TestFunc {
+    val parent:TestFunc
+    val base:TestFunc
+    val depth:Int
+    val scanResult:List[TestFunc]
+    var maxDepth:Int=0
+    var arrows:Arrows=Arrows()
 
-    // Call with a0 -> ... -> an, until doesn't fail.
-    boundary:
-      for n <- 0 until MAX_DEPTH do
-        def buildApp(hypos:List[Struct]):Struct =
-          hypos match
-            case Nil => Struct.Func("f"+names)
-            case h::t => Struct.App(h,buildApp(t))
+    def updateArrows(newArrows: Arrows): Unit =
+      println(newArrows)
+      arrows = merge(arrows, newArrows)
+      if parent != null then
+        parent.updateArrows(arrows.addHead)
+  }
 
-        var testFunc: List[Struct] => AnyRef = buildApp
-        for i <- 0 until n do
-          val tf=testFunc
-          testFunc=(hypos:List[Struct]) => (a:AnyRef) =>
-            val h=inspect(a,names+1)
-            tf(hypos)
+  def getArrowsFromGoal(ts:List[TestFunc]):Arrows=
+    def f:List[TestFunc]=>List[Arrows] =
+      case Nil => Nil
+      case h::t => h.arrows::f(t)
+    Arrows(List(Arrows(f(ts))))
 
-        try
-          val g=testFunc(List())
-          val ret = inspect(f(g),names+1)
-          break(Struct.Lambda("g",ret))
-        catch
-          case _:MaxDepth =>
-          case _:ClassCastException =>
+  def makeTestFunction(spawner:TestFunc=null,scanRes:List[TestFunc]=List()): TestFunc =
+    val tf = new Function[AnyRef,AnyRef] with TestFunc:
+      val parent=spawner
+      val base=if parent==null then this else parent.base
+      val depth=if parent==null then 0 else parent.depth+1
+      val scanResult=scanRes
 
-      throw MaxDepth()
+      override def toString:String =
+        s"${depth}/${maxDepth}(${hashCode})"
 
-  def inspect(p:AnyRef,names:Int=0) : Struct =
+      def apply(x: AnyRef) : AnyRef =
+        val s = scan(x)
+        val a = getArrowsFromGoal(s.reverse.tail)
+        //println("D "+depth+"/"+base.maxDepth+" | "+arrows+" | "+getArrowsFromGoal(s.reverse.tail)+" | "+a)
+        arrows=merge(arrows,a)
+        val tf = makeTestFunction(this,s)
+        if parent!=null then
+          parent.updateArrows(arrows.addHead)
+        tf
+
+    assert(tf.depth <= MAX_DEPTH)
+    tf.base.maxDepth = Math.max(tf.base.maxDepth, tf.depth)
+    tf
+
+  def scan(p:AnyRef):List[TestFunc] =
     p match
-      case f:Function1[AnyRef,AnyRef] =>
-        println("A Function!")
-        tryCalling(f,names)
-      case s:Struct => s
-      case what=>
-        println("Something else: "+what)
-        Struct.Stop
+      case f:TestFunc => List(f)
+      case f:Function[AnyRef,AnyRef] =>
+        val tf=makeTestFunction()
+        val r=f(tf)
+        tf::scan(r)
 
-  val r = inspect(p)
-  println(r)
+  val tf = scan(p)
+
+  val alpha=AlphaBag[TestFunc]()
+
+  def grab(f: TestFunc, hash:Boolean=false):String=
+    s"${alpha(f)}"+(if hash then "(${f.hashCode})" else "")
+
+  def printHead(tf:List[TestFunc],indent:Int=0):Unit =
+    for f <- tf do
+      print(" "*indent)
+      print(s"${grab(f)}: ")
+      println(f.arrows)
+
+  def printBody(tf:TestFunc,indent:Int=0):Unit =
+    def p(f:TestFunc):Unit =
+      if f != null then
+        if f.parent == null then
+          print(s"${grab(f)}")
+        else if f.scanResult.length<=1 then
+          p(f.parent)
+          if f.scanResult.head.depth==0 then
+            print(s" ${grab(f.scanResult.head)}")
+          else
+            print(" (")
+            printBody(f.scanResult.head,indent)
+            print(")")
+        else
+          p(f.parent)
+          println()
+          printGoal(f.scanResult,indent+2)
+    p(tf)
+
+  def printGoal(tf:List[TestFunc],indent:Int=0):Unit =
+    printHead(tf.reverse.tail.reverse,indent)
+    println(" "*indent+"-----")
+    print(" "*indent)
+    printBody(tf.reverse.head,indent)
+    println()
+
+  printGoal(tf)
