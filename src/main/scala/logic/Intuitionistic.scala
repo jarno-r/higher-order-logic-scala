@@ -20,5 +20,9 @@ def basic() : Unit =
   type X
   val imp:X -> X = (p:X) => p
 
+  def ident[X<:Object] : X => X = (x:X) => java.util.function.Function.identity()(x)
+  val funky = [X<:Object,P<:Object,Q<:Object] => (f:X => P) => (g:(X => P) => Q) => g((x:X) => ident(f(x)))
+
   inspect(trans_imp)
   inspect(contra)
+  inspect(funky)
