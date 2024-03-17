@@ -8,7 +8,8 @@ ThisBuild / organizationName := "logic"
 lazy val root = (project in file("."))
   .settings(
     name := "higher-order-logic-scala",
-    libraryDependencies += munit % Test
+    libraryDependencies += munit % Test,
+    scalacOptions += "-explain"
   )
 
 // See https://www.scala-sbt.org/1.x/docs/Using-Sonatype.html for instructions on how to publish to Sonatype.
